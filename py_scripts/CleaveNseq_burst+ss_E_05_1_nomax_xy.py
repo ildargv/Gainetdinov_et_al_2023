@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.optimize
 import sys
-import matplotlib.pyplot as plt
 def burst_ss(x, k2, k3, E):
     return E * ((np.square(k2/(k2+k3))*(1-np.exp(-1*(k2+k3)*x))) + ((k2 * k3 * x)/(k2 + k3)))
 #load data
@@ -18,9 +17,10 @@ for i in range(1,len(y_list)):
     try:
         params, cv = scipy.optimize.curve_fit(burst_ss, x, y_list[i], p0, bounds=( [0, 0, 0.5], [1000, 0.0001, 1]), maxfev=10000)
         k2, k3, E = params
+        k2_sd, k3_sd, E_sd = np.sqrt(np.diagonal(cv))
         squaredDiffs = np.square(y_list[i] - burst_ss(x, k2,k3, E))
         squaredDiffsFromMean = np.square(y_list[i] - np.mean(y_list[i]))
         rSquared = 1 - np.sum(squaredDiffs) / np.sum(squaredDiffsFromMean)
-    except RuntimeError:
-        k2, k3, E, rSquared = '0', '0', '0', '0'
-    print (names[i],k2,k3,E,rSquared,sep='\t', file = sys.stdout)
+    except:
+        k2, k2_sd, k3, k3_sd, E, E_sd, rSquared = '0', '0', '0', '0', '0', '0', '0'
+    print (names[i],k2,k2_sd,k3,k3_sd,E,E_sd,rSquared,sep='\t', file = sys.stdout)
