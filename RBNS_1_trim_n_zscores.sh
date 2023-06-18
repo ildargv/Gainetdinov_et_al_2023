@@ -1,0 +1,33 @@
+#1.trim the adapter
+module load cutadapt/4.1
+for i in $(ls *.fastq); do /pi/phillip.zamore-umw/home/ildar.gainetdinov-umw/common/pipelines/ms_short_8G "cutadapt -a TGGAATTCTCGGGTGCCAAGG  -m 15 --overlap 15 -o ${i/.fastq/.trimmed} $i  1> $i.txt"; done
+
+#2.calculate zscores for 10-12-mers
+#2a.count 10-12-mers
+for f in $(ls *3057*.trimmed); do  /project/umw_phil_zamore/common/pipelines/ms_16G_1core_24h "awk '(FNR%4==2)&&(index(\$1,\"N\")==0)&&(length(\$1)==20){total++;for (i=1;i<=11;i++){kmers[toupper(substr(\$1,i,10))]++}}END{print FILENAME\"\\t\"total >> \"kmer.stats.txt\";for (kmer in kmers){print kmer\"\\t\"kmers[kmer]}}' $f > $f.10mers"; done
+for f in $(ls *3057*.trimmed); do  /project/umw_phil_zamore/common/pipelines/ms_16G_1core_24h "awk '(FNR%4==2)&&(index(\$1,\"N\")==0)&&(length(\$1)==20){total++;for (i=1;i<=10;i++){kmers[toupper(substr(\$1,i,11))]++}}END{print FILENAME\"\\t\"total >> \"kmer.stats.txt\";for (kmer in kmers){print kmer\"\\t\"kmers[kmer]}}' $f > $f.11mers"; done
+for f in $(ls *3057*.trimmed); do  /project/umw_phil_zamore/common/pipelines/ms_16G_1core_24h "awk '(FNR%4==2)&&(index(\$1,\"N\")==0)&&(length(\$1)==20){total++;for (i=1;i<=9;i++){kmers[toupper(substr(\$1,i,12))]++}}END{print FILENAME\"\\t\"total >> \"kmer.stats.txt\";for (kmer in kmers){print kmer\"\\t\"kmers[kmer]}}' $f > $f.12mers"; done
+
+#2b.get ratio of 10-12mer count to input
+for f in $(ls *.10mers | grep -v input); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR==NR){input[$1]=$2}(FNR<NR){lines[FNR]=$1"\t"($2+1)/(input[$1]+1); totalnum++; totalratio+=(($2+1)/(input[$1]+1))}END{print "mean_ratio\t"totalratio/totalnum; for(line in lines){print lines[line]}}' input.trimmed.10mers $f > $f.ratio; done
+for f in $(ls *.11mers | grep -v input); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR==NR){input[$1]=$2}(FNR<NR){lines[FNR]=$1"\t"($2+1)/(input[$1]+1); totalnum++; totalratio+=(($2+1)/(input[$1]+1))}END{print "mean_ratio\t"totalratio/totalnum; for(line in lines){print lines[line]}}' input.trimmed.11mers $f > $f.ratio; done
+for f in $(ls *.12mers | grep -v input); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR==NR){input[$1]=$2}(FNR<NR){lines[FNR]=$1"\t"($2+1)/(input[$1]+1); totalnum++; totalratio+=(($2+1)/(input[$1]+1))}END{print "mean_ratio\t"totalratio/totalnum; for(line in lines){print lines[line]}}' input.trimmed.12mers $f > $f.ratio; done
+
+#2c.calculate z-scores for 10-12mers
+for f in $(ls *.ratio); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR==NR)&&(FNR==1){mean=$2}(FNR==NR)&&(FNR>1){n++;sum+=($2-mean)*($2-mean)}(FNR<NR)&&(FNR==1){sd=sqrt(sum/n)}(FNR<NR)&&(FNR>1){print $1"\t"($2-mean)/sd}' $f $f | sort -k2,2gr > $f.zscore; done
+
+#3a.find complementarity extent to the guide with RNAduplex for piRNA#1
+module load ViennaRNA/2.1.6h
+for f in $(ls *.zscore); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR<=1000){ gsub ("T","U",$1);print ">"$1"-"$2;print $1; print "UGAGGUAGUAGGUUGUAUAGUAUCCAGAGG"}' $f | RNAplex -T 33 > $f.Rp; done
+
+for f in $(ls *.10mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UGAGGUAGUAGGUUGUAUAGUAUCCAGAGG";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(11-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
+for f in $(ls *.11mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UGAGGUAGUAGGUUGUAUAGUAUCCAGAGG";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(12-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
+for f in $(ls *.12mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UGAGGUAGUAGGUUGUAUAGUAUCCAGAGG";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(13-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
+
+#3a.find complementarity extent to the guide with RNAduplex for L1MC piRNA
+module load ViennaRNA/2.1.6h
+for f in $(ls *.zscore); do echo $f; awk 'BEGIN{FS=OFS="\t"}(FNR<=1000){ gsub ("T","U",$1);print ">"$1"-"$2;print $1; print "UAACUAAAUACUAUGCAAGCUGUAGGUCCU"}' $f | RNAplex -T 33 > $f.Rp; done
+
+for f in $(ls *.10mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UAACUAAAUACUAUGCAAGCUGUAGGUCCU";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(11-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
+for f in $(ls *.11mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UAACUAAAUACUAUGCAAGCUGUAGGUCCU";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(12-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
+for f in $(ls *.12mers.ratio.zscore.Rp); do echo $f; awk  'BEGIN{FS=OFS="\t"}(FNR%3==1){split(substr($1,2),name,"-");getline;n=split($0,a," "); num=1;m[num]="";for(i=1;i<=length(a[1]);i++){if (substr(a[1],i,1)=="."){m[num]=m[num]" "}else{if(substr(a[1],i,1)=="&"){num=2;m[num]=""}else{m[num]=m[num] substr(a[1],i,1)}}};print name[2];print name[1]" & UAACUAAAUACUAUGCAAGCUGUAGGUCCU";split(a[2],b,",");for(j=1;j<b[1];j++){printf(" ")};printf(m[1]);for(j=1;j<(13-b[2]);j++){printf(" ")};printf(" & ");split(a[4],b,",");for(j=1;j<b[1];j++){printf(" ")};print(m[2])}' $f > $f.txt; done
